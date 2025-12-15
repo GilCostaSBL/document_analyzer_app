@@ -1,0 +1,4 @@
+# Application dependencies
+pypdf
+python-docx
+nltk
