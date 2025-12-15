@@ -76,6 +76,66 @@ def get_document_text(file_path):
 
     return text
 
+# Insert this function into the CORE ANALYSIS section (Section 1)
+
+def split_text_into_chapters(text, max_chunks=3):
+    """Splits the text into a maximum number of chunks (chapters) based on word count."""
+    tokens = word_tokenize(text)
+    total_words = len(tokens)
+    
+    # Calculate target words per chunk
+    target_size = max(1, total_words // max_chunks)
+    
+    chapter_chunks = []
+    current_chunk = []
+    
+    # Iterate through tokens, splitting when the target size is reached
+    for token in tokens:
+        current_chunk.append(token)
+        if len(current_chunk) >= target_size and len(chapter_chunks) < max_chunks - 1:
+            chapter_chunks.append(" ".join(current_chunk))
+            current_chunk = []
+
+    # Add the remaining text as the last chapter
+    if current_chunk:
+        chapter_chunks.append(" ".join(current_chunk))
+        
+    return chapter_chunks
+
+def analyze_by_chapter(document_text, file_path):
+    """
+    Splits the document, analyzes each part, and generates a dictionary
+    of reports keyed by chapter name.
+    """
+    chapter_texts = split_text_into_chapters(document_text)
+    chapter_reports = {}
+    
+    # General document-wide report
+    word_count_total, top_adjectives_total = analyze_text(document_text)
+    chapter_reports["Full Document Summary"] = generate_markdown_report(
+        word_count_total, top_adjectives_total, file_path
+    )
+    
+    # Analyze and report for each chapter
+    for i, chapter_text in enumerate(chapter_texts, 1):
+        chapter_name = f"Chapter {i}"
+        
+        # Run the existing analysis functions on the chapter text
+        word_count, top_adjectives = analyze_text(chapter_text)
+        
+        # Generate a modified report for the chapter
+        report_content = generate_markdown_report(word_count, top_adjectives, file_path)
+        
+        # Optionally, modify the report header for the chapter report
+        chapter_report = report_content.replace(
+            "## 📄 Document Analysis Report", 
+            f"## 📖 Analysis Report: {chapter_name}"
+        )
+        
+        chapter_reports[chapter_name] = chapter_report
+        
+    return chapter_reports
+
 def analyze_text(text):
     """Performs word count and adjective frequency analysis."""
     tokens = word_tokenize(text)
@@ -219,15 +279,14 @@ class DocumentAnalyzerGUI:
             self.master.after(0, lambda: self.show_error_result(document_text))
             return
             
-        # 2. Analyze Text
+        # 2. Analyze Text and Generate Chapter Reports
         try:
-            word_count, top_adjectives = analyze_text(document_text)
-            
-            # 3. Generate Report
-            report = generate_markdown_report(word_count, top_adjectives, self.file_path)
+            # === MODIFICATION HERE ===
+            chapter_reports = analyze_by_chapter(document_text, self.file_path)
             
             # Analysis successful, update GUI on the main thread
-            self.master.after(0, lambda: self.final_result_screen(report))
+            # Pass the dictionary of reports instead of a single string
+            self.master.after(0, lambda: self.final_result_screen(chapter_reports))
             
         except Exception as e:
             # Analysis failed due to an unexpected error (e.g., NLTK issue after check)
@@ -242,7 +301,7 @@ class DocumentAnalyzerGUI:
         self.initial_screen() # Return to the start screen
 
     # --- Screen 3: Results Display (Final Screen) ---
-    def final_result_screen(self, report):
+    def final_result_screen(self, chapter_reports):
         self.progress_bar.stop()
         self.clear_frame()
         self.master.title("Analysis Results")
@@ -250,24 +309,30 @@ class DocumentAnalyzerGUI:
         ttk.Label(self.main_frame, text="✅ Analysis Complete!", 
                   font=("Helvetica", 16, "bold"), foreground="green").pack(pady=10)
         
-        # Display the results (using a Text widget for the Markdown report)
-        report_label = ttk.Label(self.main_frame, text="Report (Markdown Format):", font=("Helvetica", 10, "bold"))
-        report_label.pack(anchor='w', padx=5, pady=(15, 5))
+        # Create a Notebook (Tabbed Interface)
+        notebook = ttk.Notebook(self.main_frame)
+        notebook.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # Create a scrollable Text widget for the report
-        text_frame = ttk.Frame(self.main_frame)
-        text_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        # Loop through the dictionary of reports (Chapter Name: Markdown Report)
+        for chapter_name, report_content in chapter_reports.items():
+            # Create a new frame for each tab
+            tab_frame = ttk.Frame(notebook, padding="10 10 10 10")
+            notebook.add(tab_frame, text=chapter_name)
 
-        scrollbar = ttk.Scrollbar(text_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            # Create a scrollable Text widget for the report in the tab
+            text_frame = ttk.Frame(tab_frame)
+            text_frame.pack(fill='both', expand=True)
 
-        self.report_text = tk.Text(text_frame, wrap='word', height=15, width=70, 
-                                   yscrollcommand=scrollbar.set, font=("Courier", 10))
-        self.report_text.insert(tk.END, report)
-        self.report_text.config(state=tk.DISABLED) # Make it read-only
-        self.report_text.pack(side=tk.LEFT, fill='both', expand=True)
-        
-        scrollbar.config(command=self.report_text.yview)
+            scrollbar = ttk.Scrollbar(text_frame)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+            report_text = tk.Text(text_frame, wrap='word', height=15, width=70, 
+                                       yscrollcommand=scrollbar.set, font=("Courier", 10))
+            report_text.insert(tk.END, report_content)
+            report_text.config(state=tk.DISABLED) # Make it read-only
+            report_text.pack(side=tk.LEFT, fill='both', expand=True)
+            
+            scrollbar.config(command=report_text.yview)
 
         # Back to Start Button
         ttk.Button(self.main_frame, text="Analyze Another Document", 
